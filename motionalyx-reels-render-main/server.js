@@ -339,8 +339,8 @@ app.post("/render", async (req, res) => {
     const coverCrop = `scale=${w}:${h}:force_original_aspect_ratio=increase,crop=${w}:${h},setsar=1,fps=${fps},format=yuv420p`;
 
     // SUBTITLES (ASS)
-    const titleFontSize = 150;
-    const titleOutline = 5;
+    const titleFontSize = 100;
+    const titleOutline = 3;
 
     const captionFontSize = 100;
     const captionOutline = 3;
@@ -353,7 +353,12 @@ app.post("/render", async (req, res) => {
 
     // Slide-in params (B)
     const capX = Math.round(w / 2);
-    const capY = Math.round(h / 2);
+
+    // UNIVERSAL SAFE (IG Reels + YT Shorts) - move captions higher to avoid UI overlays
+    // capY represents the bottom of the text block (Alignment=2)
+    const SAFE_BOTTOM = Math.round(h * 0.32); // ~614px for 1920 height
+    const capY = h - SAFE_BOTTOM; // ~1306 for 1920 height
+
     const slideDy = Math.max(20, Math.round(h * 0.035)); // ~3.5% of height
     const slideInMs = 220;
     const fadeInMs = 120;
@@ -392,7 +397,7 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
       return `${hh}:${pad2(mm)}:${pad2(ss)}.${pad2(cc)}`;
     }
 
-    // Slide-in override (from slightly below -> center), plus fade
+    // Slide-in override (from slightly below -> target Y), plus fade
     // \move(x1,y1,x2,y2,t1,t2) is in ms relative to line start
     const slideTag = `{\\move(${capX},${capY + slideDy},${capX},${capY},0,${slideInMs})\\fad(${fadeInMs},${fadeOutMs})}`;
 
