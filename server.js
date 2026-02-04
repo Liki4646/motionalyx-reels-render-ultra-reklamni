@@ -53,36 +53,16 @@ function wrapByChars(text, maxCharsPerLine, maxLines) {
 
   for (const w of words) {
     const cand = cur ? `${cur} ${w}` : w;
-
     if (cand.length <= maxCharsPerLine) {
       cur = cand;
       continue;
     }
-
     if (cur) lines.push(cur);
     cur = w;
-
     if (lines.length >= maxLines - 1) break;
   }
 
-  if (cur && lines.length < maxLines) {
-    const usedWords =
-      lines.join(" ").split(" ").filter(Boolean).length +
-      cur.split(" ").filter(Boolean).length;
-    const remaining = words.slice(usedWords).join(" ").trim();
-    if (remaining) {
-      let last = cur;
-      const restWords = remaining.split(" ");
-      for (const w of restWords) {
-        const cand = `${last} ${w}`;
-        if (cand.length <= maxCharsPerLine) last = cand;
-        else break;
-      }
-      cur = last;
-    }
-    lines.push(cur);
-  }
-
+  if (cur && lines.length < maxLines) lines.push(cur);
   if (!lines.length) return t;
 
   return lines.join("\\N");
@@ -179,7 +159,7 @@ app.post("/render", async (req, res) => {
     end_card_url,
     end_card_duration_ms = 4000,
     end_card_audio_url,
-    video = { width: 1080, height: 1920, fps: 30 }
+    video = { width: 1024, height: 1536, fps: 30 } // default to your format
   } = req.body || {};
 
   try {
@@ -207,9 +187,6 @@ app.post("/render", async (req, res) => {
     const sloganUrl = (end_card_audio_url && String(end_card_audio_url).trim()) || "";
     let hasEndCardAudio = Boolean(sloganUrl);
 
-    console.log("[render] has end_card_audio_url:", hasEndCardAudio ? "YES" : "NO");
-    if (hasEndCardAudio) console.log("[render] end_card_audio_url:", sloganUrl);
-
     await downloadToFile(images[0], img1Path);
     await downloadToFile(images[1], img2Path);
     await downloadToFile(images[2], img3Path);
@@ -221,10 +198,7 @@ app.post("/render", async (req, res) => {
       await downloadToFile(sloganUrl, sloganMp3Path);
 
       const mp3Size = fs.existsSync(sloganMp3Path) ? fs.statSync(sloganMp3Path).size : 0;
-      console.log("[render] slogan mp3 bytes:", mp3Size);
-
       if (mp3Size < 1500) {
-        console.log("[render] slogan mp3 seems too small -> skipping end card audio");
         hasEndCardAudio = false;
       } else {
         try {
@@ -250,14 +224,8 @@ app.post("/render", async (req, res) => {
           );
 
           const wavSize = fs.existsSync(sloganWavPath) ? fs.statSync(sloganWavPath).size : 0;
-          console.log("[render] slogan wav bytes:", wavSize);
-
-          if (wavSize < 3000) {
-            console.log("[render] slogan wav too small -> skipping end card audio");
-            hasEndCardAudio = false;
-          }
-        } catch (e) {
-          console.log("[render] slogan re-encode failed -> skipping end card audio:", String(e?.message || e));
+          if (wavSize < 3000) hasEndCardAudio = false;
+        } catch (_e) {
           hasEndCardAudio = false;
         }
       }
@@ -285,37 +253,29 @@ app.post("/render", async (req, res) => {
       audioMs = NaN;
     }
 
-    const w = Number(video.width || 1080);
-    const h = Number(video.height || 1920);
+    const w = Number(video.width || 1024);
+    const h = Number(video.height || 1536);
     const fps = Number(video.fps || 30);
 
     const scaledCaptions = normalizeAndScaleCaptions(captions, audioMs);
 
-    // If probe failed, use last caption end as “audio”
     let effectiveAudioMs = audioMs;
     if (!Number.isFinite(effectiveAudioMs) || effectiveAudioMs <= 0) {
       const lastEnd = scaledCaptions.length ? Number(scaledCaptions[scaledCaptions.length - 1].end_ms) : 0;
       effectiveAudioMs = Number.isFinite(lastEnd) && lastEnd > 0 ? Math.round(lastEnd) : 15000;
     }
 
-    // =============================
-    // SLIDES TIMING (SEGMENT-DRIVEN)
-    // 7 segments:
-    // - img1 = seg1
-    // - img2 = seg2+seg3
-    // - img3 = seg4+seg5
-    // - img4 = seg6+seg7
-    // =============================
+    // Slide timing: 7 segments mapped into 4 images
     let seg1 = 0,
       seg2 = 0,
       seg3 = 0,
       seg4 = 0;
 
     if (scaledCaptions.length >= 7) {
-      const t1 = Math.round(Number(scaledCaptions[0].end_ms)); // end seg1
-      const t3 = Math.round(Number(scaledCaptions[2].end_ms)); // end seg3
-      const t5 = Math.round(Number(scaledCaptions[4].end_ms)); // end seg5
-      const t7 = Math.round(Number(scaledCaptions[6].end_ms)); // end seg7
+      const t1 = Math.round(Number(scaledCaptions[0].end_ms));
+      const t3 = Math.round(Number(scaledCaptions[2].end_ms));
+      const t5 = Math.round(Number(scaledCaptions[4].end_ms));
+      const t7 = Math.round(Number(scaledCaptions[6].end_ms));
 
       seg1 = Math.max(1, t1);
       seg2 = Math.max(1, t3 - t1);
@@ -324,7 +284,6 @@ app.post("/render", async (req, res) => {
 
       effectiveAudioMs = Math.max(effectiveAudioMs, t7);
     } else {
-      // Fallback: split into 4 equal parts if input is malformed
       const part = Math.floor(effectiveAudioMs / 4);
       seg1 = Math.max(1, part);
       seg2 = Math.max(1, part);
@@ -339,25 +298,20 @@ app.post("/render", async (req, res) => {
     const coverCrop = `scale=${w}:${h}:force_original_aspect_ratio=increase,crop=${w}:${h},setsar=1,fps=${fps},format=yuv420p`;
 
     // =============================
-    // SUBTITLES (ASS) — FIXED:
-    // - All captions same size/style
-    // - Lower-third placement safe for IG/YT
-    // - Alignment=2 so capY is bottom of text block
+    // SUBTITLES (ASS) — SIMPLE & FIXED
+    // - ALL segments same style/size
+    // - Lower-third placement (safe-ish for IG/YT even in 2:3)
     // =============================
-    const fontSize = 100;
+    const fontSize = 92; // tuned for 1024x1536
     const outline = 3;
 
     const marginLR = Math.round(w * 0.10);
-
     const capX = Math.round(w / 2);
 
-    // Lower-third position: baseline at ~78% of video height
-    // Works for 1080x1920 AND 1024x1536 etc.
-    const yFactorEnv = Number(process.env.SUBTITLE_Y_FACTOR || "");
-    const yFactor = Number.isFinite(yFactorEnv) && yFactorEnv > 0.5 && yFactorEnv < 0.95 ? yFactorEnv : 0.78;
-    const capY = Math.round(h * yFactor);
+    // Lower-third baseline: 0.82 works well for 1024x1536 (visibly below center)
+    const capY = Math.round(h * 0.82);
 
-    const slideDy = Math.max(20, Math.round(h * 0.035)); // ~3.5% of height
+    const slideDy = Math.max(18, Math.round(h * 0.035));
     const slideInMs = 220;
     const fadeInMs = 120;
     const fadeOutMs = 120;
@@ -391,11 +345,9 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
       return `${hh}:${pad2(mm)}:${pad2(ss)}.${pad2(cc)}`;
     }
 
-    // slide-in + fade
     const slideTag = `{\\move(${capX},${capY + slideDy},${capX},${capY},0,${slideInMs})\\fad(${fadeInMs},${fadeOutMs})}`;
 
     let ass = header;
-
     for (let i = 0; i < scaledCaptions.length; i++) {
       const c = scaledCaptions[i];
       const start = msToAssTime(c.start_ms);
@@ -404,16 +356,14 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
       const raw = assEscape(c.text);
       const wrapped = wrapByChars(raw, maxCharsPerLine, maxLines);
 
-      // ALL lines use the SAME style now
       ass += `Dialogue: 0,${start},${end},Caption,,0,0,0,,${slideTag}${wrapped}\n`;
     }
 
     fs.writeFileSync(assPath, ass, "utf8");
 
-    // VIDEO FILTER (Classic dissolve crossfade)
+    // VIDEO FILTER (crossfade slideshow + end card)
     const xfadeDur = 0.30;
 
-    // Make sure each segment can accommodate the fade (avoid negative offsets)
     const safeSeg1 = Math.max(seg1, Math.ceil(xfadeDur * 1000) + 1);
     const safeSeg2 = Math.max(seg2, Math.ceil(xfadeDur * 1000) + 1);
     const safeSeg3 = Math.max(seg3, Math.ceil(xfadeDur * 1000) + 1);
@@ -462,7 +412,6 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
 
     if (hasEndCardAudio) {
       const fadeIn = 0.12;
-
       filterParts.push(
         `[6:a]asetpts=PTS-STARTPTS,` +
           `afade=t=in:st=0:d=${fadeIn},` +
@@ -524,22 +473,17 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
       audioPath
     ];
 
-    if (hasEndCardAudio) {
-      args.push("-i", sloganWavPath);
-    }
+    if (hasEndCardAudio) args.push("-i", sloganWavPath);
 
     args.push(
       "-filter_complex",
       filter,
-
       "-map",
       "[vout]",
       "-map",
       "[aout2]",
-
       "-r",
       String(fps),
-
       "-c:v",
       "libx264",
       "-pix_fmt",
@@ -548,16 +492,12 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
       "high",
       "-level",
       "4.1",
-
       "-c:a",
       "aac",
       "-b:a",
       "192k",
-
       outPath
     );
-
-    console.log("[render] ffmpeg starting...");
 
     await execFileAsync("ffmpeg", args, EXEC_OPTS_FFMPEG);
 
