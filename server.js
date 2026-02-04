@@ -338,32 +338,32 @@ app.post("/render", async (req, res) => {
 
     const coverCrop = `scale=${w}:${h}:force_original_aspect_ratio=increase,crop=${w}:${h},setsar=1,fps=${fps},format=yuv420p`;
 
-    // SUBTITLES (ASS)
-    const titleFontSize = 150;
-    const titleOutline = 5;
-
-    const captionFontSize = 100;
-    const captionOutline = 3;
+    // =============================
+    // SUBTITLES (ASS) — FIXED:
+    // - All captions same size/style
+    // - Lower-third placement safe for IG/YT
+    // - Alignment=2 so capY is bottom of text block
+    // =============================
+    const fontSize = 100;
+    const outline = 3;
 
     const marginLR = Math.round(w * 0.10);
 
-    // Center all subtitles on screen
-    const marginV = 0;
-    const titleMarginV = 0;
-
-    // Slide-in params (B)
     const capX = Math.round(w / 2);
-    const capY = Math.round(h / 2);
+
+    // Lower-third position: baseline at ~78% of video height
+    // Works for 1080x1920 AND 1024x1536 etc.
+    const yFactorEnv = Number(process.env.SUBTITLE_Y_FACTOR || "");
+    const yFactor = Number.isFinite(yFactorEnv) && yFactorEnv > 0.5 && yFactorEnv < 0.95 ? yFactorEnv : 0.78;
+    const capY = Math.round(h * yFactor);
+
     const slideDy = Math.max(20, Math.round(h * 0.035)); // ~3.5% of height
     const slideInMs = 220;
     const fadeInMs = 120;
     const fadeOutMs = 120;
 
-    const titleMaxCharsPerLine = 12;
-    const titleMaxLines = 6;
-
-    const capMaxCharsPerLine = 18;
-    const capMaxLines = 5;
+    const maxCharsPerLine = 18;
+    const maxLines = 5;
 
     const header = `[Script Info]
 ScriptType: v4.00+
@@ -374,8 +374,7 @@ ScaledBorderAndShadow: yes
 
 [V4+ Styles]
 Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
-Style: Title,DejaVu Sans,${titleFontSize},&H00FFFFFF,&H00FFFFFF,&H00000000,&H00000000,-1,0,0,0,100,100,0,0,1,${titleOutline},0,5,${marginLR},${marginLR},${titleMarginV},1
-Style: Caption,DejaVu Sans,${captionFontSize},&H00FFFFFF,&H00FFFFFF,&H00000000,&H00000000,-1,0,0,0,100,100,0,0,1,${captionOutline},0,5,${marginLR},${marginLR},${marginV},1
+Style: Caption,DejaVu Sans,${fontSize},&H00FFFFFF,&H00FFFFFF,&H00000000,&H00000000,-1,0,0,0,100,100,0,0,1,${outline},0,2,${marginLR},${marginLR},0,1
 
 [Events]
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
@@ -392,8 +391,7 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
       return `${hh}:${pad2(mm)}:${pad2(ss)}.${pad2(cc)}`;
     }
 
-    // Slide-in override (from slightly below -> center), plus fade
-    // \move(x1,y1,x2,y2,t1,t2) is in ms relative to line start
+    // slide-in + fade
     const slideTag = `{\\move(${capX},${capY + slideDy},${capX},${capY},0,${slideInMs})\\fad(${fadeInMs},${fadeOutMs})}`;
 
     let ass = header;
@@ -403,15 +401,11 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
       const start = msToAssTime(c.start_ms);
       const end = msToAssTime(c.end_ms);
 
-      if (i === 0) {
-        const raw = assEscape(c.text);
-        const wrapped = wrapByChars(raw, titleMaxCharsPerLine, titleMaxLines);
-        ass += `Dialogue: 0,${start},${end},Title,,0,0,0,,${slideTag}${wrapped}\n`;
-      } else {
-        const raw = assEscape(c.text);
-        const wrapped = wrapByChars(raw, capMaxCharsPerLine, capMaxLines);
-        ass += `Dialogue: 0,${start},${end},Caption,,0,0,0,,${slideTag}${wrapped}\n`;
-      }
+      const raw = assEscape(c.text);
+      const wrapped = wrapByChars(raw, maxCharsPerLine, maxLines);
+
+      // ALL lines use the SAME style now
+      ass += `Dialogue: 0,${start},${end},Caption,,0,0,0,,${slideTag}${wrapped}\n`;
     }
 
     fs.writeFileSync(assPath, ass, "utf8");
