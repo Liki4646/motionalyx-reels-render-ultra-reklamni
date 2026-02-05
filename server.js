@@ -348,13 +348,12 @@ app.post("/render", async (req, res) => {
     const marginLR = Math.round(w * 0.10);
 
     // Bottom placement (safe zone)
-    const marginV = Math.round(h * 0.08);      // ~8% višine (npr. 120px pri 1536)
-    const titleMarginV = Math.round(h * 0.10);
+    const marginV = Math.round(h * 0.08); // ~8% višine (npr. 120px pri 1536)
+    const titleMarginV = Math.round(h * 0.08);
 
     // Slide-in params (B)
     const capX = Math.round(w / 2);
-    const titleY = Math.round(h / 2);
-    const capY = Math.round(h * 0.72); // captions in lower half (adjust 0.68–0.78 if needed)
+    const capY = Math.round(h * 0.72); // captions in lower half
     const slideDy = Math.max(20, Math.round(h * 0.035)); // ~3.5% of height
     const slideInMs = 220;
     const fadeInMs = 120;
@@ -375,7 +374,7 @@ ScaledBorderAndShadow: yes
 
 [V4+ Styles]
 Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
-Style: Title,DejaVu Sans,${titleFontSize},&H00FFFFFF,&H00FFFFFF,&H00000000,&H00000000,-1,0,0,0,100,100,0,0,1,${titleOutline},0,5,${marginLR},${marginLR},${titleMarginV},1
+Style: Title,DejaVu Sans,${captionFontSize},&H00FFFFFF,&H00FFFFFF,&H00000000,&H00000000,-1,0,0,0,100,100,0,0,1,${captionOutline},0,2,${marginLR},${marginLR},${titleMarginV},1
 Style: Caption,DejaVu Sans,${captionFontSize},&H00FFFFFF,&H00FFFFFF,&H00000000,&H00000000,-1,0,0,0,100,100,0,0,1,${captionOutline},0,2,${marginLR},${marginLR},${marginV},1
 
 [Events]
@@ -395,8 +394,7 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
 
     // Slide-in override (from slightly below -> target), plus fade
     // \move(x1,y1,x2,y2,t1,t2) is in ms relative to line start
-    const titleSlideTag = `{\\move(${capX},${titleY + slideDy},${capX},${titleY},0,${slideInMs})\\fad(${fadeInMs},${fadeOutMs})}`;
-    const captionSlideTag = `{\\move(${capX},${capY + slideDy},${capX},${capY},0,${slideInMs})\\fad(${fadeInMs},${fadeOutMs})}`;
+    const slideTag = `{\\move(${capX},${capY + slideDy},${capX},${capY},0,${slideInMs})\\fad(${fadeInMs},${fadeOutMs})}`;
 
     let ass = header;
 
@@ -407,12 +405,12 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
 
       if (i === 0) {
         const raw = assEscape(c.text);
-        const wrapped = wrapByChars(raw, titleMaxCharsPerLine, titleMaxLines);
-        ass += `Dialogue: 0,${start},${end},Title,,0,0,0,,${titleSlideTag}${wrapped}\n`;
+        const wrapped = wrapByChars(raw, capMaxCharsPerLine, capMaxLines);
+        ass += `Dialogue: 0,${start},${end},Title,,0,0,0,,${slideTag}${wrapped}\n`;
       } else {
         const raw = assEscape(c.text);
         const wrapped = wrapByChars(raw, capMaxCharsPerLine, capMaxLines);
-        ass += `Dialogue: 0,${start},${end},Caption,,0,0,0,,${captionSlideTag}${wrapped}\n`;
+        ass += `Dialogue: 0,${start},${end},Caption,,0,0,0,,${slideTag}${wrapped}\n`;
       }
     }
 
