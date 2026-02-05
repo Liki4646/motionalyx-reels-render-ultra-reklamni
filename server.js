@@ -353,7 +353,7 @@ app.post("/render", async (req, res) => {
 
     // Slide-in params (B)
     const capX = Math.round(w / 2);
-    const capY = Math.round(h * 0.82); // captions LOWER (was 0.72)
+    const capY = Math.round(h * 0.82); // captions LOWER
     const slideDy = Math.max(20, Math.round(h * 0.035)); // ~3.5% of height
     const slideInMs = 220;
     const fadeInMs = 120;
@@ -416,7 +416,7 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
 
     fs.writeFileSync(assPath, ass, "utf8");
 
-    // VIDEO FILTER (Classic dissolve crossfade)
+    // VIDEO FILTER (Ken Burns + Classic dissolve crossfade)
     const xfadeDur = 0.30;
 
     // Make sure each segment can accommodate the fade (avoid negative offsets)
@@ -429,6 +429,18 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
     const off2 = Math.max(0.001, (safeSeg1 + safeSeg2) / 1000 - 2 * xfadeDur);
     const off3 = Math.max(0.001, (safeSeg1 + safeSeg2 + safeSeg3) / 1000 - 3 * xfadeDur);
 
+    const d1 = (safeSeg1 / 1000).toFixed(3);
+    const d2 = (safeSeg2 / 1000).toFixed(3);
+    const d3 = (safeSeg3 / 1000).toFixed(3);
+    const d4 = (safeSeg4 / 1000).toFixed(3);
+
+    // Ken Burns: very subtle zoom-in (about 4%) over each segment
+    const kbZ = 0.04;
+    const kb1 = `scale=${w}*(1+${kbZ}*t/${d1}):${h}*(1+${kbZ}*t/${d1}):eval=frame,crop=${w}:${h}`;
+    const kb2 = `scale=${w}*(1+${kbZ}*t/${d2}):${h}*(1+${kbZ}*t/${d2}):eval=frame,crop=${w}:${h}`;
+    const kb3 = `scale=${w}*(1+${kbZ}*t/${d3}):${h}*(1+${kbZ}*t/${d3}):eval=frame,crop=${w}:${h}`;
+    const kb4 = `scale=${w}*(1+${kbZ}*t/${d4}):${h}*(1+${kbZ}*t/${d4}):eval=frame,crop=${w}:${h}`;
+
     const filterParts = [
       `[0:v]${coverCrop}[v0]`,
       `[1:v]${coverCrop}[v1]`,
@@ -436,10 +448,10 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
       `[3:v]${coverCrop}[v3]`,
       `[4:v]${coverCrop}[v4]`,
 
-      `[v0]trim=duration=${(safeSeg1 / 1000).toFixed(3)},setpts=PTS-STARTPTS[s0]`,
-      `[v1]trim=duration=${(safeSeg2 / 1000).toFixed(3)},setpts=PTS-STARTPTS[s1]`,
-      `[v2]trim=duration=${(safeSeg3 / 1000).toFixed(3)},setpts=PTS-STARTPTS[s2]`,
-      `[v3]trim=duration=${(safeSeg4 / 1000).toFixed(3)},setpts=PTS-STARTPTS[s3]`,
+      `[v0]trim=duration=${d1},setpts=PTS-STARTPTS,${kb1}[s0]`,
+      `[v1]trim=duration=${d2},setpts=PTS-STARTPTS,${kb2}[s1]`,
+      `[v2]trim=duration=${d3},setpts=PTS-STARTPTS,${kb3}[s2]`,
+      `[v3]trim=duration=${d4},setpts=PTS-STARTPTS,${kb4}[s3]`,
 
       `[s0][s1]xfade=transition=fade:duration=${xfadeDur.toFixed(2)}:offset=${off1.toFixed(3)}[x01]`,
       `[x01][s2]xfade=transition=fade:duration=${xfadeDur.toFixed(2)}:offset=${off2.toFixed(3)}[x012]`,
