@@ -353,7 +353,7 @@ app.post("/render", async (req, res) => {
 
     // Slide-in params (B)
     const capX = Math.round(w / 2);
-    const capY = Math.round(h * 0.82); // captions LOWER
+    const capY = Math.round(h * 0.88); // captions EVEN LOWER
     const slideDy = Math.max(20, Math.round(h * 0.035)); // ~3.5% of height
     const slideInMs = 220;
     const fadeInMs = 120;
